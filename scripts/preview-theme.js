@@ -4,6 +4,8 @@
 import * as dotenv from "dotenv";
 dotenv.config();
 
+import url from "url";
+
 import core, { debug, setFailed } from "@actions/core";
 import github from "@actions/github";
 import ColorContrastChecker from "color-contrast-checker";
@@ -23,15 +25,15 @@ const THEME_PR_FAIL_TEXT = ":x: Theme PR does not adhere to our guidelines.";
 const THEME_PR_SUCCESS_TEXT =
   ":heavy_check_mark: Theme PR does adhere to our guidelines.";
 const FAIL_TEXT = `
-   \rUnfortunately, your theme PR does not adhere to our [theme guidelines](https://github.com/anuraghazra/github-readme-stats/blob/master/CONTRIBUTING.md#themes-contribution). Please fix the issues below, and we will review your\
-   \r PR again. This pull request will **automatically close in 15 days** if no changes are made. After this time, you must re-open the PR for it to be reviewed.
- `;
+  \rUnfortunately, your theme PR does not adhere to our [theme guidelines](https://github.com/anuraghazra/github-readme-stats/blob/master/CONTRIBUTING.md#themes-contribution). Please fix the issues below, and we will review your\
+  \r PR again. This pull request will **automatically close in 15 days** if no changes are made. After this time, you must re-open the PR for it to be reviewed.
+`;
 const THEME_CONTRIB_GUIDELINESS = `
-     \rHi, thanks for the theme contribution. Please read our theme [contribution guidelines](https://github.com/anuraghazra/github-readme-stats/blob/master/CONTRIBUTING.md#themes-contribution).
-     \rWe are currently only accepting color combinations from any VSCode theme or themes with good colour combinations to minimize bloating the themes collection.
-   
-     \r> Also, note that if this theme is exclusively for your personal use, then instead of adding it to our theme collection, you can use card [customization options](https://github.com/anuraghazra/github-readme-stats#customization).
-   `;
+    \rHi, thanks for the theme contribution. Please read our theme [contribution guidelines](https://github.com/anuraghazra/github-readme-stats/blob/master/CONTRIBUTING.md#themes-contribution).
+    \rWe are currently only accepting color combinations from any VSCode theme or themes with good colour combinations to minimize bloating the themes collection.
+  
+    \r> Also, note that if this theme is exclusively for your personal use, then instead of adding it to our theme collection, you can use card [customization options](https://github.com/anuraghazra/github-readme-stats#customization).
+  `;
 const AVAILABLE_COLOR_PROPS = [
   "bg_color",
   "icon_color",
@@ -40,6 +42,23 @@ const AVAILABLE_COLOR_PROPS = [
 ];
 const INVALID_REVIEW_COMMENT = (commentUrl) =>
   `Some themes are invalid. See the [Automated Theme Preview](${commentUrl}) comment above for more information.`;
+
+/**
+ * Parse cmd line args.
+ * @param {string} key argument key.
+ * @returns Value of cmd line argument with key `key`.
+ */
+const argv = (key) => {
+  // Return true if the key exists and a value is defined
+  if (process.argv.includes(`--${key}`)) return true;
+
+  const value = process.argv.find((element) => element.startsWith(`--${key}=`));
+
+  // Return null if the key does not exist and a value is not defined
+  if (!value) return null;
+
+  return value.replace(`--${key}=`, "");
+};
 
 /**
  * Retrieve information about the repository that ran the action.
@@ -81,7 +100,7 @@ const getPrNumber = () => {
  *
  * @returns {string} Github token.
  */
-const getGithubToken = () => {
+export const getGithubToken = () => {
   const token = core.getInput("github_token") || process.env.GITHUB_TOKEN;
   if (!token) {
     throw Error("Could not find github token");
@@ -336,18 +355,19 @@ const themeNameAlreadyExists = (name) => {
 
 /**
  * Main function.
+ * @param {string} pull_request_nr The pull request number to check. If empty action context or environment variable will be used.
  */
-const run = async () => {
+const run = async (pull_request_nr) => {
   try {
     const dryRun = process.env.DRY_RUN === "true" || false;
     debug("Retrieve action information from context...");
     debug(`Context: ${inspect(github.context)}`);
     let commentBody = `# ${COMMENT_TITLE}
-         ${THEME_CONTRIB_GUIDELINESS}
-       `;
+        ${THEME_CONTRIB_GUIDELINESS}
+      `;
     const ccc = new ColorContrastChecker();
     const octokit = github.getOctokit(getGithubToken());
-    const pullRequestId = getPrNumber();
+    const pullRequestId = pull_request_nr ? pull_request_nr : getPrNumber();
     const { owner, repo } = getRepoInfo(github.context);
 
     // Retrieve the PR diff and preview-theme comment.
@@ -437,17 +457,15 @@ const run = async () => {
       if (invalidColors) {
         themeValid[theme] = false;
         previewBody += `
-             \r### ${
-               themeName.charAt(0).toUpperCase() + themeName.slice(1)
-             } theme preview
-             
-             \r${warnings
-               .map((warning) => `- :warning: ${warning}.\n`)
-               .join("")}
-             \r${errors.map((error) => `- :x: ${error}.\n`).join("")}
- 
-             \r>:x: Cannot create theme preview.
-           `;
+            \r### ${
+              themeName.charAt(0).toUpperCase() + themeName.slice(1)
+            } theme preview
+            
+            \r${warnings.map((warning) => `- :warning: ${warning}.\n`).join("")}
+            \r${errors.map((error) => `- :x: ${error}.\n`).join("")}
+
+            \r>:x: Cannot create theme preview.
+          `;
         continue;
       }
 
@@ -478,45 +496,45 @@ const run = async () => {
       // Create theme preview body.
       debug("Theme preview body: Create theme preview body...");
       previewBody += `
-           \r### ${
-             themeName.charAt(0).toUpperCase() + themeName.slice(1)
-           } theme preview
-           
-           \r${warnings.map((warning) => `- :warning: ${warning}.\n`).join("")}
-   
-           \ntitle_color: <code>#${titleColor}</code> | icon_color: <code>#${iconColor}</code> | text_color: <code>#${textColor}</code> | bg_color: <code>#${bgColor}</code>
-   
-           \r[Preview Link](${url})
-   
-           \r[![](${url})](${url})
-         `;
+          \r### ${
+            themeName.charAt(0).toUpperCase() + themeName.slice(1)
+          } theme preview
+          
+          \r${warnings.map((warning) => `- :warning: ${warning}.\n`).join("")}
+  
+          \ntitle_color: <code>#${titleColor}</code> | icon_color: <code>#${iconColor}</code> | text_color: <code>#${textColor}</code> | bg_color: <code>#${bgColor}</code>
+  
+          \r[Preview Link](${url})
+  
+          \r[![](${url})](${url})
+        `;
     }
 
     // Create comment body.
     debug("Create comment body...");
     commentBody += `
-         \r${
-           Object.values(themeValid).every((value) => value)
-             ? THEME_PR_SUCCESS_TEXT
-             : THEME_PR_FAIL_TEXT
-         }
-         \r## Test results
-         \r${Object.entries(themeValid)
-           .map(
-             ([key, value]) =>
-               `- ${value ? ":heavy_check_mark:" : ":x:"} ${key}`,
-           )
-           .join("\r")}
-   
-         \r${
-           Object.values(themeValid).every((value) => value)
-             ? "**Result:** :heavy_check_mark: All themes are valid."
-             : "**Result:** :x: Some themes are invalid.\n\n" + FAIL_TEXT
-         }
-         
-         \r## Details
-         \r${previewBody}
-       `;
+        \r${
+          Object.values(themeValid).every((value) => value)
+            ? THEME_PR_SUCCESS_TEXT
+            : THEME_PR_FAIL_TEXT
+        }
+        \r## Test results
+        \r${Object.entries(themeValid)
+          .map(
+            ([key, value]) =>
+              `- ${value ? ":heavy_check_mark:" : ":x:"} ${key}`,
+          )
+          .join("\r")}
+  
+        \r${
+          Object.values(themeValid).every((value) => value)
+            ? "**Result:** :heavy_check_mark: All themes are valid."
+            : "**Result:** :x: Some themes are invalid.\n\n" + FAIL_TEXT
+        }
+        
+        \r## Details
+        \r${previewBody}
+      `;
 
     // Create or update theme-preview comment.
     debug("Create or update theme-preview comment...");
@@ -569,4 +587,12 @@ const run = async () => {
   }
 };
 
-run();
+// Fetch 'pull_request_nr' cmd line arg
+const pull_request_nr = Number(argv("pull_request_nr")) || undefined;
+
+// Run main function.
+if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
+  run(pull_request_nr);
+}
+
+export default run;
